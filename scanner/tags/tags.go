@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nicksellen/audiotags"
+	"github.com/02strich/audiotags"
 	"github.com/pkg/errors"
 )
 
