@@ -26,7 +26,7 @@ var (
 )
 
 func init() {
-	db, err := db.New(testDBPath)
+	db, err := db.NewSqlite3(testDBPath)
 	if err != nil {
 		log.Fatalf("error opening database: %v\n", err)
 	}

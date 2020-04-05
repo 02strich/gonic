@@ -7,6 +7,8 @@ import (
 	"os"
 
 	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/postgres"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"github.com/pkg/errors"
 	"gopkg.in/gormigrate.v1"
 )
@@ -27,15 +29,28 @@ type DB struct {
 	*gorm.DB
 }
 
-func New(path string) (*DB, error) {
+func NewSqlite3(path string) (*DB, error) {
 	pathAndArgs := fmt.Sprintf("%s?%s", path, dbOptions.Encode())
 	db, err := gorm.Open("sqlite3", pathAndArgs)
 	if err != nil {
 		return nil, errors.Wrap(err, "with gorm")
 	}
+	db.Exec("PRAGMA journal_mode=WAL;")
+	return NewGormDB(db)
+}
+
+func NewPostgres(host string, port int, databaseName string, username string, password string) (*DB, error) {
+	pathAndArgs := fmt.Sprintf("host=%s port=%d user=%s dbname=%s password=%s", host, port, username, databaseName, password)
+	db, err := gorm.Open("postgres", pathAndArgs)
+	if err != nil {
+		return nil, errors.Wrap(err, "with gorm")
+	}
+	return NewGormDB(db)
+}
+
+func NewGormDB(db *gorm.DB) (*DB, error) {
 	db.SetLogger(log.New(os.Stdout, "gorm ", 0))
 	db.DB().SetMaxOpenConns(dbMaxOpenConns)
-	db.Exec("PRAGMA journal_mode=WAL;")
 	migr := gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{
 		&migrationInitSchema,
 		&migrationCreateInitUser,
@@ -44,14 +59,14 @@ func New(path string) (*DB, error) {
 		&migrationAddGenre,
 		&migrationUpdateTranscodePrefIDX,
 	})
-	if err = migr.Migrate(); err != nil {
+	if err := migr.Migrate(); err != nil {
 		return nil, errors.Wrap(err, "migrating to latest version")
 	}
 	return &DB{DB: db}, nil
 }
 
 func NewMock() (*DB, error) {
-	return New(":memory:")
+	return NewSqlite3(":memory:")
 }
 
 func (db *DB) GetSetting(key string) string {

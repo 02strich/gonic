@@ -125,7 +125,7 @@ func (s *Scanner) Start() error {
 	// delete albums without tracks
 	s.db.Exec(`
 		DELETE FROM albums
-		WHERE tag_artist_id NOT NULL
+		WHERE tag_artist_id IS NOT NULL
 		AND NOT EXISTS ( SELECT 1 FROM tracks
 		                 WHERE tracks.album_id=albums.id
 		)`)

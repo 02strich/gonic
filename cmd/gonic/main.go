@@ -20,8 +20,12 @@ func main() {
 	set := flag.NewFlagSet(version.NAME, flag.ExitOnError)
 	listenAddr := set.String("listen-addr", "0.0.0.0:4747", "listen address (optional)")
 	musicPath := set.String("music-path", "", "path to music")
-	cachePath := set.String("cache-path", "/tmp/gonic_cache", "path to cache")
-	dbPath := set.String("db-path", "gonic.db", "path to database (optional)")
+	cachePath := set.String("cache-path", "/tmp/gonic_cache", "path to cache (optional, default: /tmp/gonic_cache)")
+	sqlitePath := set.String("db-path", "gonic.db", "path to database (optional, default: gonic.db)")
+	postgresHost := set.String("postgres-host", "", "name of the PostgreSQL server (optional)")
+	postgresPort := set.Int("postgres-port", 5432, "port to use for PostgreSQL connection (optional, default: 5432)")
+	postgresName := set.String("postgres-db", "gonic", "name of the PostgreSQL database (optional, default: gonic)")
+	postgresUser := set.String("postgres-user", "gonic", "name of the PostgreSQL user (optional, default: gonic)")
 	scanInterval := set.Int("scan-interval", 0, "interval (in minutes) to automatically scan music (optional)")
 	proxyPrefix := set.String("proxy-prefix", "", "url path prefix to use if behind proxy. eg '/gonic' (optional)")
 	_ = set.String("config-path", "", "path to config (optional)")
@@ -33,6 +37,7 @@ func main() {
 	); err != nil {
 		log.Fatalf("error parsing args: %v\n", err)
 	}
+
 	if *showVersion {
 		fmt.Println(version.VERSION)
 		os.Exit(0)
@@ -45,23 +50,32 @@ func main() {
 			log.Fatalf("couldn't create cache path: %v\n", err)
 		}
 	}
-	db, err := db.New(*dbPath)
+
+	var database *db.DB
+	if len(*postgresHost) > 0 {
+		database, err = db.NewPostgres(*postgresHost, *postgresPort, *postgresName, *postgresUser, os.Getenv("GONIC_POSTGRES_PW"))
+	} else {
+		database, err = db.NewSqlite3(*sqlitePath)
+	}
 	if err != nil {
 		log.Fatalf("error opening database: %v\n", err)
 	}
-	defer db.Close()
+	defer database.Close()
+
 	proxyPrefixExpr := regexp.MustCompile(`^\/*(.*?)\/*$`)
 	*proxyPrefix = proxyPrefixExpr.ReplaceAllString(*proxyPrefix, `/$1`)
 	serverOptions := server.Options{
-		DB:           db,
 		MusicPath:    *musicPath,
+		DB:           database,
 		CachePath:    *cachePath,
 		ListenAddr:   *listenAddr,
 		ScanInterval: time.Duration(*scanInterval) * time.Minute,
 		ProxyPrefix:  *proxyPrefix,
 	}
+
 	log.Printf("using opts %+v\n", serverOptions)
 	s := server.New(serverOptions)
+
 	log.Printf("starting server at %s", *listenAddr)
 	if err := s.Start(); err != nil {
 		log.Fatalf("error starting server: %v\n", err)
