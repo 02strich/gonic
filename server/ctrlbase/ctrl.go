@@ -7,6 +7,7 @@ import (
 	"path"
 
 	"senan.xyz/g/gonic/db"
+	"senan.xyz/g/gonic/dir"
 	"senan.xyz/g/gonic/scanner"
 )
 
@@ -46,7 +47,7 @@ func statusToBlock(code int) string {
 
 type Controller struct {
 	DB          *db.DB
-	MusicPath   string
+	MusicDir    dir.Dir
 	Scanner     *scanner.Scanner
 	ProxyPrefix string
 }

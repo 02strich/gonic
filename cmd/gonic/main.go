@@ -12,6 +12,7 @@ import (
 	"github.com/peterbourgon/ff"
 
 	"senan.xyz/g/gonic/db"
+	"senan.xyz/g/gonic/dir"
 	"senan.xyz/g/gonic/server"
 	"senan.xyz/g/gonic/version"
 )
@@ -19,7 +20,7 @@ import (
 func main() {
 	set := flag.NewFlagSet(version.NAME, flag.ExitOnError)
 	listenAddr := set.String("listen-addr", "0.0.0.0:4747", "listen address (optional)")
-	musicPath := set.String("music-path", "", "path to music")
+	localMusicPath := set.String("music-path", "", "path to music (optional)")
 	cachePath := set.String("cache-path", "/tmp/gonic_cache", "path to cache (optional, default: /tmp/gonic_cache)")
 	sqlitePath := set.String("db-path", "gonic.db", "path to database (optional, default: gonic.db)")
 	postgresHost := set.String("postgres-host", "", "name of the PostgreSQL server (optional)")
@@ -42,9 +43,12 @@ func main() {
 		fmt.Println(version.VERSION)
 		os.Exit(0)
 	}
-	if _, err := os.Stat(*musicPath); os.IsNotExist(err) {
-		log.Fatal("please provide a valid music directory")
+
+	musicDir, err := dir.NewLocalDir(*localMusicPath)
+	if err != nil {
+		log.Fatalf("please provide a valid music directory: %v\n", err)
 	}
+
 	if _, err := os.Stat(*cachePath); os.IsNotExist(err) {
 		if err := os.MkdirAll(*cachePath, os.ModePerm); err != nil {
 			log.Fatalf("couldn't create cache path: %v\n", err)
@@ -65,8 +69,8 @@ func main() {
 	proxyPrefixExpr := regexp.MustCompile(`^\/*(.*?)\/*$`)
 	*proxyPrefix = proxyPrefixExpr.ReplaceAllString(*proxyPrefix, `/$1`)
 	serverOptions := server.Options{
-		MusicPath:    *musicPath,
 		DB:           database,
+		MusicDir:     musicDir,
 		CachePath:    *cachePath,
 		ListenAddr:   *listenAddr,
 		ScanInterval: time.Duration(*scanInterval) * time.Minute,

@@ -13,8 +13,19 @@ type Tags struct {
 	props *audiotags.AudioProperties
 }
 
-func New(path string) (*Tags, error) {
+func NewFromPath(path string) (*Tags, error) {
 	raw, props, err := audiotags.Read(path)
+	if err != nil {
+		return nil, errors.Wrap(err, "audiotags module")
+	}
+	return &Tags{
+		raw:   raw,
+		props: props,
+	}, nil
+}
+
+func NewFromBytes(data []byte) (*Tags, error) {
+	raw, props, err := audiotags.ReadFromData(data)
 	if err != nil {
 		return nil, errors.Wrap(err, "audiotags module")
 	}

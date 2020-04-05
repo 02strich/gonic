@@ -69,10 +69,10 @@ func writeCmdOutput(out, cache io.Writer, pipeReader io.ReadCloser) {
 }
 
 // pre-format the ffmpeg command with needed options
-func ffmpegCommand(filePath string, profile *Profile, bitrate string) *exec.Cmd {
+func ffmpegCommand(profile *Profile, bitrate string) *exec.Cmd {
 	args := []string{
 		"-v", "0",
-		"-i", filePath,
+		"-i", "pipe:",
 		"-map", "0:0",
 		"-vn",
 		"-b:a", bitrate,
@@ -93,12 +93,13 @@ func ffmpegCommand(filePath string, profile *Profile, bitrate string) *exec.Cmd 
 	return exec.Command("/usr/bin/ffmpeg", args...)
 }
 
-func Encode(out io.Writer, trackPath, cachePath string, profile *Profile, bitrate string) error {
+func Encode(in io.Reader, out io.Writer, cachePath string, profile *Profile, bitrate string) error {
 	// prepare the command and file descriptors
-	cmd := ffmpegCommand(trackPath, profile, bitrate)
-	pipeReader, pipeWriter := io.Pipe()
-	cmd.Stdout = pipeWriter
-	cmd.Stderr = pipeWriter
+	cmd := ffmpegCommand(profile, bitrate)
+	cmd.Stdin = in
+	outputPipeReader, outputPipeWriter := io.Pipe()
+	cmd.Stdout = outputPipeWriter
+	cmd.Stderr = outputPipeWriter
 	// create cache file
 	cacheFile, err := os.Create(cachePath)
 	if err != nil {
@@ -109,13 +110,13 @@ func Encode(out io.Writer, trackPath, cachePath string, profile *Profile, bitrat
 	// -- @spijet
 	//
 	// start up writers for cache file and http response
-	go writeCmdOutput(out, cacheFile, pipeReader)
+	go writeCmdOutput(out, cacheFile, outputPipeReader)
 	// run ffmpeg
 	if err := cmd.Run(); err != nil {
 		return errors.Wrapf(err, "running ffmpeg")
 	}
 	// close all pipes and flush cache file
-	pipeWriter.Close()
+	outputPipeWriter.Close()
 	if err := cacheFile.Sync(); err != nil {
 		return errors.Wrapf(err, "flushing %q", cachePath)
 	}

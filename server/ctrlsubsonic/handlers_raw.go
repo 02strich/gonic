@@ -10,6 +10,7 @@ import (
 	"github.com/jinzhu/gorm"
 
 	"senan.xyz/g/gonic/db"
+	"senan.xyz/g/gonic/dir"
 	"senan.xyz/g/gonic/server/ctrlsubsonic/params"
 	"senan.xyz/g/gonic/server/ctrlsubsonic/spec"
 	"senan.xyz/g/gonic/server/encode"
@@ -38,13 +39,20 @@ func (c *Controller) ServeGetCoverArt(w http.ResponseWriter, r *http.Request) *s
 	if folder.Cover == "" {
 		return spec.NewError(10, "no cover found for that folder")
 	}
-	absPath := path.Join(
-		c.MusicPath,
+
+	relPath := path.Join(
 		folder.LeftPath,
 		folder.RightPath,
 		folder.Cover,
 	)
-	http.ServeFile(w, r, absPath)
+	lastModified, readerSeeker, err := c.MusicDir.GetFile(relPath)
+	if err != nil {
+		return spec.NewError(11, "failed to get file: %v", err)
+	}
+	http.ServeContent(w, r, folder.Cover, lastModified, readerSeeker)
+	if err := readerSeeker.Close(); err != nil {
+		return spec.NewError(21, "failed to close input file: %v", err)
+	}
 	return nil
 }
 
@@ -61,34 +69,52 @@ type serveTrackOptions struct {
 	pref       *db.TranscodePreference
 	maxBitrate int
 	cachePath  string
-	musicPath  string
+	musicDir   dir.Dir
 }
 
-func serveTrackRaw(w http.ResponseWriter, r *http.Request, opts serveTrackOptions) {
+func serveTrackRaw(w http.ResponseWriter, r *http.Request, opts serveTrackOptions) *spec.Response{
 	log.Printf("serving raw %q\n", opts.track.Filename)
 	w.Header().Set("Content-Type", opts.track.MIME())
-	trackPath := path.Join(opts.musicPath, opts.track.RelPath())
-	http.ServeFile(w, r, trackPath)
+	lastModified, readerSeeker, err := opts.musicDir.GetFile(opts.track.RelPath())
+	if err != nil {
+		return spec.NewError(11, "failed to get file: %v", err)
+	}
+	http.ServeContent(w, r, opts.track.Filename, lastModified, readerSeeker)
+	if err := readerSeeker.Close(); err != nil {
+		return spec.NewError(21, "Failed to close input data: %v", err)
+	}
+	return nil
 }
 
-func serveTrackEncode(w http.ResponseWriter, r *http.Request, opts serveTrackOptions) {
+func serveTrackEncode(w http.ResponseWriter, r *http.Request, opts serveTrackOptions) *spec.Response {
 	profile := encode.Profiles[opts.pref.Profile]
 	bitrate := encode.GetBitrate(opts.maxBitrate, profile)
-	trackPath := path.Join(opts.musicPath, opts.track.RelPath())
-	cacheKey := encode.CacheKey(trackPath, opts.pref.Profile, bitrate)
+
+	cacheKey := encode.CacheKey(opts.track.RelPath(), opts.pref.Profile, bitrate)
 	cacheFile := path.Join(opts.cachePath, cacheKey)
 	if fileExists(cacheFile) {
 		log.Printf("serving transcode `%s`: cache [%s/%s] hit!\n", opts.track.Filename, profile.Format, bitrate)
 		http.ServeFile(w, r, cacheFile)
-		return
+		return nil
 	}
+
 	log.Printf("serving transcode `%s`: cache [%s/%s] miss!\n", opts.track.Filename, profile.Format, bitrate)
-	if err := encode.Encode(w, trackPath, cacheFile, profile, bitrate); err != nil {
-		log.Printf("error encoding %q: %v\n", trackPath, err)
-		return
+	_, originalFile, err := opts.musicDir.GetFile(opts.track.RelPath())
+	if err != nil {
+		return spec.NewError(11, "failed to read original file for encode: %v", err)
 	}
-	log.Printf("serving transcode `%s`: encoded to [%s/%s] successfully\n",
-		opts.track.Filename, profile.Format, bitrate)
+	if err := encode.Encode(originalFile, w, cacheFile, profile, bitrate); err != nil {
+		if err2 := originalFile.Close(); err2 != nil {
+			return spec.NewError(121, "error encoding %v: %v\nEncountered error while closing input data: %v", opts.track.RelPath(), err, err2)
+		} else {
+			return spec.NewError(12, "error encoding %v: %v", opts.track.RelPath(), err)
+		}
+	}
+	log.Printf("serving transcode `%s`: encoded to [%s/%s] successfully\n", opts.track.Filename, profile.Format, bitrate)
+	if err := originalFile.Close(); err != nil {
+		return spec.NewError(21, "Encountered error while closing input data: %v", err)
+	}
+	return nil
 }
 
 func (c *Controller) ServeStream(w http.ResponseWriter, r *http.Request) *spec.Response {
@@ -121,7 +147,7 @@ func (c *Controller) ServeStream(w http.ResponseWriter, r *http.Request) *spec.R
 	client := params.Get("c")
 	servOpts := serveTrackOptions{
 		track:     track,
-		musicPath: c.MusicPath,
+		musicDir:  c.MusicDir,
 	}
 	pref := &db.TranscodePreference{}
 	err = c.DB.
@@ -131,14 +157,13 @@ func (c *Controller) ServeStream(w http.ResponseWriter, r *http.Request) *spec.R
 		First(pref).
 		Error
 	if gorm.IsRecordNotFoundError(err) {
-		serveTrackRaw(w, r, servOpts)
-		return nil
+		return serveTrackRaw(w, r, servOpts)
+	} else {
+		servOpts.pref = pref
+		servOpts.maxBitrate = params.GetIntOr("maxBitRate", 0)
+		servOpts.cachePath = c.cachePath
+		return serveTrackEncode(w, r, servOpts)
 	}
-	servOpts.pref = pref
-	servOpts.maxBitrate = params.GetIntOr("maxBitRate", 0)
-	servOpts.cachePath = c.cachePath
-	serveTrackEncode(w, r, servOpts)
-	return nil
 }
 
 func (c *Controller) ServeDownload(w http.ResponseWriter, r *http.Request) *spec.Response {
@@ -155,9 +180,8 @@ func (c *Controller) ServeDownload(w http.ResponseWriter, r *http.Request) *spec
 	if gorm.IsRecordNotFoundError(err) {
 		return spec.NewError(70, "media with id `%d` was not found", id)
 	}
-	serveTrackRaw(w, r, serveTrackOptions{
+	return serveTrackRaw(w, r, serveTrackOptions{
 		track:     track,
-		musicPath: c.MusicPath,
+		musicDir:  c.MusicDir,
 	})
-	return nil
 }

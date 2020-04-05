@@ -1,21 +1,20 @@
 package scanner
 
 import (
+	"io/ioutil"
 	"log"
-	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/jinzhu/gorm"
-	"github.com/karrick/godirwalk"
 	"github.com/pkg/errors"
 	"github.com/rainycape/unidecode"
 
 	"senan.xyz/g/gonic/db"
+	"senan.xyz/g/gonic/dir"
 	"senan.xyz/g/gonic/mime"
 	"senan.xyz/g/gonic/scanner/stack"
 	"senan.xyz/g/gonic/scanner/tags"
@@ -38,7 +37,7 @@ func SetScanning() func() {
 
 type Scanner struct {
 	db        *db.DB
-	musicPath string
+	musicDir  dir.Dir
 	// these two are for the transaction we do for every folder.
 	// the boolean is there so we dont begin or commit multiple
 	// times in the handle folder or post children callback
@@ -57,10 +56,10 @@ type Scanner struct {
 	seenTracksErr int              // n tracks we we couldn't scan
 }
 
-func New(db *db.DB, musicPath string) *Scanner {
+func New(db *db.DB, musicDir dir.Dir) *Scanner {
 	return &Scanner{
 		db:          db,
-		musicPath:   musicPath,
+		musicDir:    musicDir,
 		seenTracks:  make(map[int]struct{}),
 		seenFolders: make(map[int]struct{}),
 		curFolders:  &stack.Stack{},
@@ -83,14 +82,9 @@ func (s *Scanner) Start() error {
 	}()
 	// ** begin being walking
 	start := time.Now()
-	err := godirwalk.Walk(s.musicPath, &godirwalk.Options{
-		Callback:             s.callbackItem,
-		PostChildrenCallback: s.callbackPost,
-		Unsorted:             true,
-		FollowSymbolicLinks:  true,
-	})
+	err := s.musicDir.Walk(s.callbackItem, s.callbackPost)
 	if err != nil {
-		return errors.Wrap(err, "walking filesystem")
+		return errors.Wrap(err, "walking music directory")
 	}
 	log.Printf("finished scan in %s, +%d/%d tracks (%d err)\n",
 		time.Since(start),
@@ -98,9 +92,11 @@ func (s *Scanner) Start() error {
 		len(s.seenTracks),
 		s.seenTracksErr,
 	)
+
 	// ** begin cleaning
 	start = time.Now()
 	var deleted uint
+
 	// delete tracks not on filesystem
 	s.db.WithTx(func(tx *gorm.DB) {
 		var tracks []*db.Track
@@ -112,6 +108,7 @@ func (s *Scanner) Start() error {
 			}
 		}
 	})
+
 	// delete folders not on filesystem
 	s.db.WithTx(func(tx *gorm.DB) {
 		var folders []*db.Album
@@ -122,6 +119,7 @@ func (s *Scanner) Start() error {
 			}
 		}
 	})
+
 	// delete albums without tracks
 	s.db.Exec(`
 		DELETE FROM albums
@@ -129,6 +127,7 @@ func (s *Scanner) Start() error {
 		AND NOT EXISTS ( SELECT 1 FROM tracks
 		                 WHERE tracks.album_id=albums.id
 		)`)
+
 	// delete artists without albums
 	s.db.Exec(`
 		DELETE FROM artists
@@ -138,6 +137,7 @@ func (s *Scanner) Start() error {
 	// finish up
 	strNow := strconv.FormatInt(time.Now().Unix(), 10)
 	s.db.SetSetting("last_scan_time", strNow)
+
 	//
 	log.Printf("finished clean in %s, -%d tracks\n",
 		time.Since(start),
@@ -148,11 +148,11 @@ func (s *Scanner) Start() error {
 
 // items are passed to the handle*() functions
 type item struct {
-	fullPath  string
 	relPath   string
 	directory string
 	filename  string
-	stat      os.FileInfo
+	size      int64
+	modTime   time.Time
 }
 
 var coverFilenames = map[string]struct{}{
@@ -174,35 +174,25 @@ var coverFilenames = map[string]struct{}{
 // ## begin callbacks
 // ## begin callbacks
 
-func (s *Scanner) callbackItem(fullPath string, info *godirwalk.Dirent) error {
-	stat, err := os.Stat(fullPath)
-	if err != nil {
-		return errors.Wrap(err, "stating")
-	}
-	relPath, err := filepath.Rel(s.musicPath, fullPath)
-	if err != nil {
-		return errors.Wrap(err, "getting relative path")
-	}
+func (s *Scanner) callbackItem(relPath string, fileSize int64, modTime time.Time, isDirectory bool) error {
 	directory, filename := path.Split(relPath)
 	it := &item{
-		fullPath:  fullPath,
-		relPath:   relPath,
+		relPath: relPath,
 		directory: directory,
-		filename:  filename,
-		stat:      stat,
+		filename: filename,
+		size: fileSize,
+		modTime: modTime,
 	}
-	isDir, err := info.IsDirOrSymlinkToDir()
-	if err != nil {
-		return errors.Wrap(err, "stating link to dir")
-	}
-	if isDir {
+	if isDirectory {
 		return s.handleFolder(it)
 	}
+
 	lowerFilename := strings.ToLower(filename)
 	if _, ok := coverFilenames[lowerFilename]; ok {
 		s.curCover = filename
 		return nil
 	}
+
 	ext := path.Ext(filename)
 	if ext == "" {
 		return nil
@@ -213,7 +203,7 @@ func (s *Scanner) callbackItem(fullPath string, info *godirwalk.Dirent) error {
 	return nil
 }
 
-func (s *Scanner) callbackPost(fullPath string, info *godirwalk.Dirent) error {
+func (s *Scanner) callbackPost(_ string) error {
 	defer func() {
 		s.curCover = ""
 	}()
@@ -221,6 +211,7 @@ func (s *Scanner) callbackPost(fullPath string, info *godirwalk.Dirent) error {
 		s.trTx.Commit()
 		s.trTxOpen = false
 	}
+
 	// begin taking the current folder off the stack and add it's
 	// parent, cover that we found, etc.
 	folder := s.curFolders.Pop()
@@ -230,6 +221,7 @@ func (s *Scanner) callbackPost(fullPath string, info *godirwalk.Dirent) error {
 	folder.ParentID = s.curFolders.PeekID()
 	folder.Cover = s.curCover
 	s.db.Save(folder)
+
 	// we only log changed folders
 	log.Printf("processed folder `%s`\n",
 		path.Join(folder.LeftPath, folder.RightPath))
@@ -275,14 +267,14 @@ func (s *Scanner) handleFolder(it *item) error {
 		First(folder).
 		Error
 	if !gorm.IsRecordNotFoundError(err) &&
-		it.stat.ModTime().Before(folder.UpdatedAt) {
+		it.modTime.Before(folder.UpdatedAt) {
 		// we found the record but it hasn't changed
 		return nil
 	}
 	folder.LeftPath = it.directory
 	folder.RightPath = it.filename
 	folder.RightPathUDec = decoded(it.filename)
-	folder.ModifiedAt = it.stat.ModTime()
+	folder.ModifiedAt = it.modTime
 	s.db.Save(folder)
 	folder.ReceivedPaths = true
 	return nil
@@ -303,21 +295,39 @@ func (s *Scanner) handleTrack(it *item) error {
 		}).
 		First(track).
 		Error
-	if !gorm.IsRecordNotFoundError(err) &&
-		it.stat.ModTime().Before(track.UpdatedAt) {
+	if !gorm.IsRecordNotFoundError(err) && it.modTime.Before(track.UpdatedAt) {
 		// we found the record but it hasn't changed
 		s.seenTracks[track.ID] = struct{}{}
 		return nil
 	}
+
 	track.Filename = it.filename
 	track.FilenameUDec = decoded(it.filename)
-	track.Size = int(it.stat.Size())
+	track.Size = int(it.size)
 	track.AlbumID = s.curFolders.PeekID()
-	trTags, err := tags.New(it.fullPath)
+
+	_, reader, err := s.musicDir.GetFile(it.relPath)
 	if err != nil {
 		// not returning the error here because we don't want
 		// the entire walk to stop if we can't read the tags
 		// of a single file
+		log.Printf("error retrieving file `%v`: %v", it.relPath, err)
+		s.seenTracksErr++
+		return nil
+	}
+	data, err := ioutil.ReadAll(reader)
+	if err != nil {
+		log.Printf("error reading file `%v`: %v", it.relPath, err)
+		s.seenTracksErr++
+		return nil
+	}
+	if err := reader.Close(); err != nil {
+		log.Printf("error closing file `%v`: %v", it.relPath, err)
+		s.seenTracksErr++
+		return nil
+	}
+	trTags, err := tags.NewFromBytes(data)
+	if err != nil {
 		log.Printf("error reading tags `%s`: %v", it.relPath, err)
 		s.seenTracksErr++
 		return nil
@@ -330,6 +340,7 @@ func (s *Scanner) handleTrack(it *item) error {
 	track.TagBrainzID = trTags.BrainzID()
 	track.Length = trTags.Length()   // these two should be calculated
 	track.Bitrate = trTags.Bitrate() // ...from the file instead of tags
+
 	// ** begin set album artist basics
 	artistName := func() string {
 		if r := trTags.AlbumArtist(); r != "" {
@@ -352,6 +363,7 @@ func (s *Scanner) handleTrack(it *item) error {
 		s.trTx.Save(artist)
 	}
 	track.ArtistID = artist.ID
+
 	// ** begin set genre
 	genreName := func() string {
 		if r := trTags.Genre(); r != "" {
@@ -370,10 +382,12 @@ func (s *Scanner) handleTrack(it *item) error {
 		s.trTx.Save(genre)
 	}
 	track.TagGenreID = genre.ID
+
 	// ** begin save the track
 	s.trTx.Save(track)
 	s.seenTracks[track.ID] = struct{}{}
 	s.seenTracksNew++
+
 	// ** begin set album if this is the first track in the folder
 	folder := s.curFolders.Peek()
 	if !folder.ReceivedPaths || folder.ReceivedTags {

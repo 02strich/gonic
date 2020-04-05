@@ -10,15 +10,14 @@ import (
 	"github.com/peterbourgon/ff"
 
 	"senan.xyz/g/gonic/db"
+	"senan.xyz/g/gonic/dir"
 	"senan.xyz/g/gonic/scanner"
 	"senan.xyz/g/gonic/version"
 )
 
 func main() {
 	set := flag.NewFlagSet(version.NAME_SCAN, flag.ExitOnError)
-	musicPath := set.String(
-		"music-path", "",
-		"path to music")
+	localMusicPath := set.String("music-path", "", "path to music (optional)")
 	sqlitePath := set.String("db-path", "gonic.db", "path to database (optional, default: gonic.db)")
 	postgresHost := set.String("postgres-host", "", "name of the PostgreSQL server (optional)")
 	postgresPort := set.Int("postgres-port", 5432, "port to use for PostgreSQL connection (optional, default: 5432)")
@@ -33,14 +32,17 @@ func main() {
 	); err != nil {
 		log.Fatalf("error parsing args: %v\n", err)
 	}
-	if _, err := os.Stat(*musicPath); os.IsNotExist(err) {
-		log.Fatal("please provide a valid music directory")
-    }
 
 	if *showVersion {
 		fmt.Println(version.VERSION)
 		os.Exit(0)
 	}
+
+	musicDir, err := dir.NewLocalDir(*localMusicPath)
+	if err != nil {
+		log.Fatalf("please provide a valid music directory: %v\n", err)
+	}
+
 	var database *db.DB
 	if len(*postgresHost) > 0 {
 		database, err = db.NewPostgres(*postgresHost, *postgresPort, *postgresName, *postgresUser, os.Getenv("GONIC_POSTGRES_PW"))
@@ -53,8 +55,8 @@ func main() {
 	defer database.Close()
 
 	s := scanner.New(
-		*musicPath,
 		database,
+		musicDir,
 	)
 	if err := s.Start(); err != nil {
 		log.Fatalf("error starting scanner: %v\n", err)

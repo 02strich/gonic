@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"senan.xyz/g/gonic/db"
+	"senan.xyz/g/gonic/dir"
 	"senan.xyz/g/gonic/scanner"
 	"senan.xyz/g/gonic/server/assets"
 	"senan.xyz/g/gonic/server/ctrladmin"
@@ -20,7 +21,7 @@ import (
 
 type Options struct {
 	DB           *db.DB
-	MusicPath    string
+	MusicDir     dir.Dir
 	CachePath    string
 	ListenAddr   string
 	ScanInterval time.Duration
@@ -35,18 +36,20 @@ type Server struct {
 
 func New(opts Options) *Server {
 	// ** begin sanitation
-	opts.MusicPath = filepath.Clean(opts.MusicPath)
 	opts.CachePath = filepath.Clean(opts.CachePath)
+
 	// ** begin controllers
-	scanner := scanner.New(opts.DB, opts.MusicPath)
+	scanner := scanner.New(opts.DB, opts.MusicDir)
+
 	// the base controller, it's fields/middlewares are embedded/used by the
 	// other two admin ui and subsonic controllers
 	base := &ctrlbase.Controller{
 		DB:          opts.DB,
-		MusicPath:   opts.MusicPath,
+		MusicDir:    opts.MusicDir,
 		ProxyPrefix: opts.ProxyPrefix,
 		Scanner:     scanner,
 	}
+
 	// router with common wares for admin / subsonic
 	r := mux.NewRouter()
 	r.Use(base.WithLogging)
@@ -56,6 +59,7 @@ func New(opts Options) *Server {
 	setupAdmin(setupAdminRouter, ctrladmin.New(base))
 	setupSubsonicRouter := r.PathPrefix("/rest").Subrouter()
 	setupSubsonic(setupSubsonicRouter, ctrlsubsonic.New(base, opts.CachePath))
+
 	//
 	server := &http.Server{
 		Addr:         opts.ListenAddr,
