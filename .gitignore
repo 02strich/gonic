@@ -10,6 +10,7 @@ cmd/server/main
 _test*
 dist
 *.sql
+.idea
 gonic
 gonicscan
 gonicembed
