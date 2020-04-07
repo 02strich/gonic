@@ -18,6 +18,8 @@ import (
 func main() {
 	set := flag.NewFlagSet(version.NAME_SCAN, flag.ExitOnError)
 	localMusicPath := set.String("music-path", "", "path to music (optional)")
+	remoteMusicS3Region := set.String("remote-music-s3-region", "us-west-2", "region of the S3 bucket to read music from (optional, default us-west-2)")
+	remoteMusicS3Bucket := set.String("remote-music-s3-bucket", "", "name of the S3 bucket to read music from (optional)")
 	sqlitePath := set.String("db-path", "gonic.db", "path to database (optional, default: gonic.db)")
 	postgresHost := set.String("postgres-host", "", "name of the PostgreSQL server (optional)")
 	postgresPort := set.Int("postgres-port", 5432, "port to use for PostgreSQL connection (optional, default: 5432)")
@@ -38,7 +40,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	musicDir, err := dir.NewLocalDir(*localMusicPath)
+	var musicDir dir.Dir
+	var err error
+	if len(*remoteMusicS3Bucket) > 0 {
+		musicDir, err = dir.NewS3Dir(*remoteMusicS3Region, *remoteMusicS3Bucket)
+	} else {
+		musicDir, err = dir.NewLocalDir(*localMusicPath)
+	}
 	if err != nil {
 		log.Fatalf("please provide a valid music directory: %v\n", err)
 	}
