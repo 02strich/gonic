@@ -158,6 +158,8 @@ func (c *Controller) ServeStream(w http.ResponseWriter, r *http.Request) *spec.R
 		Error
 	if gorm.IsRecordNotFoundError(err) {
 		return serveTrackRaw(w, r, servOpts)
+	} else if _, ok := encode.Profiles[pref.Profile]; !ok {
+		return serveTrackRaw(w, r, servOpts)
 	} else {
 		servOpts.pref = pref
 		servOpts.maxBitrate = params.GetIntOr("maxBitRate", 0)

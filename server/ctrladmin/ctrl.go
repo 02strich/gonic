@@ -1,6 +1,7 @@
 package ctrladmin
 
 import (
+	"encoding/base64"
 	"encoding/gob"
 	"fmt"
 	"html/template"
@@ -84,10 +85,10 @@ type Controller struct {
 }
 
 func New(base *ctrlbase.Controller) *Controller {
-	sessionKey := []byte(base.DB.GetSetting("session_key"))
-	if len(sessionKey) == 0 {
+	sessionKey, err := base64.StdEncoding.DecodeString(base.DB.GetSetting("session_key"))
+	if err != nil || len(sessionKey) == 0 {
 		sessionKey = securecookie.GenerateRandomKey(32)
-		base.DB.SetSetting("session_key", string(sessionKey))
+		base.DB.SetSetting("session_key", base64.StdEncoding.EncodeToString(sessionKey))
 	}
 	tmplBase := template.
 		New("layout").

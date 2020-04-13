@@ -84,7 +84,7 @@ func setupMisc(r *mux.Router, ctrl *ctrlbase.Controller) {
 	r.HandleFunc("/musicFolderSettings.view",
 		func(w http.ResponseWriter, r *http.Request) {
 			// jamstash seems to call "musicFolderSettings.view" to start a scan. notice
-			// that there is no "/rest/" prefix, so i doesn't fit in with the nice router,
+			// that there is no "/rest/" prefix, so it doesn't fit in with the nice router,
 			// custom handler, middleware. etc setup that we've got in `SetupSubsonic()`.
 			// instead lets redirect to down there and use the scan endpoint
 			redirectTo := fmt.Sprintf("/rest/startScan.view?%s", r.URL.Query().Encode())

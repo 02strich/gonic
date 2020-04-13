@@ -8,12 +8,14 @@ import (
 
 func NewAlbumByFolder(f *db.Album) *Album {
 	a := &Album{
-		Artist:     f.Parent.RightPath,
 		ID:         f.ID,
 		IsDir:      true,
 		ParentID:   f.ParentID,
 		Title:      f.RightPath,
 		TrackCount: f.ChildCount,
+	}
+	if f.Parent != nil {
+		a.Artist = f.Parent.RightPath
 	}
 	if f.Cover != "" {
 		a.CoverID = f.ID

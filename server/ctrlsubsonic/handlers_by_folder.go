@@ -13,7 +13,7 @@ import (
 	"senan.xyz/g/gonic/server/ctrlsubsonic/spec"
 )
 
-// the subsonic spec metions "artist" a lot when talking about the
+// the subsonic spec mentions "artist" a lot when talking about the
 // browse by folder endpoints. but since we're not browsing by tag
 // we can't access artists. so instead we'll consider the artist of
 // an track to be the it's respective folder that comes directly
@@ -22,7 +22,7 @@ import (
 func (c *Controller) ServeGetIndexes(r *http.Request) *spec.Response {
 	var folders []*db.Album
 	c.DB.
-		Select("*, count(sub.id) child_count").
+		Select("albums.*, count(sub.id) child_count").
 		Joins("LEFT JOIN albums sub ON albums.id=sub.parent_id").
 		Where("albums.parent_id=1").
 		Group("albums.id").
@@ -117,7 +117,7 @@ func (c *Controller) ServeGetAlbumList(r *http.Request) *spec.Response {
 			JOIN plays
 			ON albums.id=plays.album_id AND plays.user_id=?`,
 			user.ID)
-		q = q.Order("plays.count DESC")
+		q = q.Order("SUM(plays.count) DESC")
 	case "newest":
 		q = q.Order("modified_at DESC")
 	case "random":
@@ -128,7 +128,7 @@ func (c *Controller) ServeGetAlbumList(r *http.Request) *spec.Response {
 			JOIN plays
 			ON albums.id=plays.album_id AND plays.user_id=?`,
 			user.ID)
-		q = q.Order("plays.time DESC")
+		q = q.Order("MAX(plays.time) DESC")
 	default:
 		return spec.NewError(10, "unknown value `%s` for parameter 'type'", listType)
 	}
