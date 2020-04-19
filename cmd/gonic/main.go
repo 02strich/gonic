@@ -20,6 +20,7 @@ import (
 func main() {
 	set := flag.NewFlagSet(version.NAME, flag.ExitOnError)
 	listenAddr := set.String("listen-addr", "0.0.0.0:4747", "listen address (optional)")
+	frontendAddr := set.String("frontend-addr", "", "frontend address for UPNP (optional)")
 	localMusicPath := set.String("music-path", "", "path to music (optional)")
 	remoteMusicS3Region := set.String("remote-music-s3-region", "us-west-2", "region of the S3 bucket to read music from (optional, default: us-west-2)")
 	remoteMusicS3Bucket := set.String("remote-music-s3-bucket", "", "name of the S3 bucket to read music from (optional)")
@@ -81,6 +82,7 @@ func main() {
 		MusicDir:     musicDir,
 		CachePath:    *cachePath,
 		ListenAddr:   *listenAddr,
+		FrontendAddr: *frontendAddr,
 		ScanInterval: time.Duration(*scanInterval) * time.Minute,
 		ProxyPrefix:  *proxyPrefix,
 	}

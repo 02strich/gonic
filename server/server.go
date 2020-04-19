@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"senan.xyz/g/gonic/server/ctrlupnp"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -24,6 +25,7 @@ type Options struct {
 	MusicDir     dir.Dir
 	CachePath    string
 	ListenAddr   string
+	FrontendAddr string
 	ScanInterval time.Duration
 	ProxyPrefix  string
 }
@@ -59,6 +61,8 @@ func New(opts Options) *Server {
 	setupAdmin(setupAdminRouter, ctrladmin.New(base))
 	setupSubsonicRouter := r.PathPrefix("/rest").Subrouter()
 	setupSubsonic(setupSubsonicRouter, ctrlsubsonic.New(base, opts.CachePath))
+	setupUPnPRouter := r.PathPrefix("/upnp").Subrouter()
+	setupUPnP(setupUPnPRouter, ctrlupnp.New(base, opts.FrontendAddr))
 
 	//
 	server := &http.Server{
@@ -181,6 +185,17 @@ func setupSubsonic(r *mux.Router, ctrl *ctrlsubsonic.Controller) {
 	notFoundHandler := ctrl.H(ctrl.ServeNotFound)
 	notFoundRoute := r.NewRoute().Handler(notFoundHandler)
 	r.NotFoundHandler = notFoundRoute.GetHandler()
+}
+
+func setupUPnP(r *mux.Router, ctrl *ctrlupnp.Controller) {
+	r.Handle("/dms.xml", ctrl.H(ctrl.ServeDeviceXML))
+	r.Handle("/cms.xml", ctrl.H(ctrl.ServeConnectionManagerXML))
+	r.Handle("/cds.xml", ctrl.H(ctrl.ServeContentDirectoryXML))
+	r.Handle("/cms_evt", ctrl.H(ctrl.ServeCMSEvent))
+	r.Handle("/cms_ctrl", ctrl.H(ctrl.ServeCMSControl))
+	r.Handle("/cds_evt", ctrl.H(ctrl.ServeCDSEvents))
+	r.Handle("/cds_ctrl", ctrl.H(ctrl.ServeCDSControl))
+	r.Handle("/streaming", ctrl.HR(ctrl.ServeStream))
 }
 
 func (s *Server) Start() error {
