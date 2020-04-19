@@ -197,7 +197,7 @@ func (s *Scanner) callbackItem(relPath string, fileSize int64, modTime time.Time
 	if ext == "" {
 		return nil
 	}
-	if _, ok := mime.Types[ext[1:]]; ok {
+	if _, ok := mime.Types[strings.ToLower(ext[1:])]; ok {
 		return s.handleTrack(it)
 	}
 	return nil
