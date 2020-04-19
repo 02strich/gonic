@@ -152,7 +152,7 @@ func (c *Controller) ServeStream(w http.ResponseWriter, r *http.Request) *spec.R
 	pref := &db.TranscodePreference{}
 	err = c.DB.
 		Where("user_id=?", user.ID).
-		Where("client COLLATE NOCASE IN (?)", []string{"*", client}).
+		Where("client IN (?)", []string{"*", client}).
 		Order("client DESC"). // ensure "*" is last if it's there
 		First(pref).
 		Error
