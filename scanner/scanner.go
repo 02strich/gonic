@@ -195,11 +195,14 @@ func (s *Scanner) callbackItem(relPath string, fileSize int64, modTime time.Time
 
 	ext := path.Ext(filename)
 	if ext == "" {
+		log.Printf("Did not find an extension in `%s`\n", filename);
 		return nil
 	}
 	if _, ok := mime.Types[strings.ToLower(ext[1:])]; ok {
 		return s.handleTrack(it)
 	}
+
+	log.Printf("Extension of `%s` is unsupported\n", filename);
 	return nil
 }
 
@@ -269,6 +272,7 @@ func (s *Scanner) handleFolder(it *item) error {
 	if !gorm.IsRecordNotFoundError(err) &&
 		it.modTime.Before(folder.UpdatedAt) {
 		// we found the record but it hasn't changed
+		log.Printf("Folder `%s/%s` hasn't changed, so not updating it", it.directory, it.filename)
 		return nil
 	}
 	folder.LeftPath = it.directory
@@ -285,6 +289,8 @@ func (s *Scanner) handleTrack(it *item) error {
 		s.trTx = s.db.Begin()
 		s.trTxOpen = true
 	}
+	log.Printf("Handling track `%s`", it.relPath)
+
 	// ** begin set track basics
 	track := &db.Track{}
 	err := s.trTx.
