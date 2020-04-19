@@ -326,7 +326,7 @@ func (s *Scanner) handleTrack(it *item) error {
 		s.seenTracksErr++
 		return nil
 	}
-	trTags, err := tags.NewFromBytes(data)
+	trTags, err := tags.NewFromBytes(it.relPath, data)
 	if err != nil {
 		log.Printf("error reading tags `%s`: %v", it.relPath, err)
 		s.seenTracksErr++

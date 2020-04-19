@@ -2,7 +2,7 @@ module senan.xyz/g/gonic
 
 require (
 	cloud.google.com/go v0.40.0 // indirect
-	github.com/02strich/audiotags v0.0.0-20200402035443-81ca8b37d6c2
+	github.com/02strich/audiotags v0.0.0-20200414051401-c91f093e84f1
 	github.com/Masterminds/goutils v1.1.0 // indirect
 	github.com/Masterminds/semver v1.4.2 // indirect
 	github.com/Masterminds/sprig v2.20.0+incompatible

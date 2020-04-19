@@ -24,8 +24,8 @@ func NewFromPath(path string) (*Tags, error) {
 	}, nil
 }
 
-func NewFromBytes(data []byte) (*Tags, error) {
-	raw, props, err := audiotags.ReadFromData(data)
+func NewFromBytes(path string, data []byte) (*Tags, error) {
+	raw, props, err := audiotags.ReadFromDataWithName(path, data)
 	if err != nil {
 		return nil, errors.Wrap(err, "audiotags module")
 	}
