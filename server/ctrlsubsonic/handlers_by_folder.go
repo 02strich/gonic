@@ -19,14 +19,43 @@ import (
 // an track to be the it's respective folder that comes directly
 // under the root directory
 
+func (c *Controller) ServeGetMusicFolders(_ *http.Request) *spec.Response {
+	var dbFolders []*db.Album
+	c.DB.
+		Select("*").
+		Where("parent_id is NULL").
+		Find(&dbFolders)
+
+	musicFolders := make([]*spec.MusicFolder, 0, len(dbFolders))
+	for _, dbFolder := range dbFolders {
+		if dbFolder.RightPath == "." {
+			continue
+		}
+		musicFolders = append(musicFolders, &spec.MusicFolder{ID: dbFolder.ID, Name: dbFolder.RightPath})
+	}
+
+	sub := spec.NewResponse()
+	sub.MusicFolders = &spec.MusicFolders {
+		List: musicFolders,
+	}
+	return sub
+}
+
 func (c *Controller) ServeGetIndexes(r *http.Request) *spec.Response {
+	parameters := r.Context().Value(CtxParams).(params.Params)
+	musicFolderId, err := parameters.GetInt("musicFolderId")
+	if err != nil {
+		return spec.NewError(10, "please provide an `musicFolderId` parameter")
+	}
+
 	var folders []*db.Album
 	c.DB.
 		Select("albums.*, count(sub.id) child_count").
 		Joins("LEFT JOIN albums sub ON albums.id=sub.parent_id").
-		Where("albums.parent_id=1").
+		Where("albums.parent_id=?", musicFolderId).
 		Group("albums.id").
 		Find(&folders)
+
 	// [a-z#] -> 27
 	indexMap := make(map[string]*spec.Index, 27)
 	resp := make([]*spec.Index, 0, 27)

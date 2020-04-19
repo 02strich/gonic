@@ -74,16 +74,6 @@ func (c *Controller) ServeScrobble(r *http.Request) *spec.Response {
 	return spec.NewResponse()
 }
 
-func (c *Controller) ServeGetMusicFolders(r *http.Request) *spec.Response {
-	folders := &spec.MusicFolders{}
-	folders.List = []*spec.MusicFolder{
-		{ID: 1, Name: "music"},
-	}
-	sub := spec.NewResponse()
-	sub.MusicFolders = folders
-	return sub
-}
-
 func (c *Controller) ServeStartScan(r *http.Request) *spec.Response {
 	go func() {
 		if err := c.Scanner.Start(); err != nil {
