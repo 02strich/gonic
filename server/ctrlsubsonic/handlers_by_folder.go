@@ -85,8 +85,8 @@ func (c *Controller) ServeGetIndexes(r *http.Request) *spec.Response {
 }
 
 func (c *Controller) ServeGetMusicDirectory(r *http.Request) *spec.Response {
-	params := r.Context().Value(CtxParams).(params.Params)
-	id, err := params.GetInt("id")
+	parameters := r.Context().Value(CtxParams).(params.Params)
+	id, err := parameters.GetInt("id")
 	if err != nil {
 		return spec.NewError(10, "please provide an `id` parameter")
 	}
@@ -110,7 +110,7 @@ func (c *Controller) ServeGetMusicDirectory(r *http.Request) *spec.Response {
 		Find(&childTracks)
 	for _, c := range childTracks {
 		toAppend := spec.NewTCTrackByFolder(c, folder)
-		if params.Get("c") == "Jamstash" {
+		if parameters.Get("c") == "Jamstash" {
 			// jamstash thinks it can't play flacs
 			toAppend.ContentType = "audio/mpeg"
 			toAppend.Suffix = "mp3"
@@ -126,8 +126,8 @@ func (c *Controller) ServeGetMusicDirectory(r *http.Request) *spec.Response {
 // changes to this function should be reflected in in _by_tags.go's
 // getAlbumListTwo() function
 func (c *Controller) ServeGetAlbumList(r *http.Request) *spec.Response {
-	params := r.Context().Value(CtxParams).(params.Params)
-	listType := params.Get("type")
+	parameters := r.Context().Value(CtxParams).(params.Params)
+	listType := parameters.Get("type")
 	if listType == "" {
 		return spec.NewError(10, "please provide a `type` parameter")
 	}
@@ -169,8 +169,8 @@ func (c *Controller) ServeGetAlbumList(r *http.Request) *spec.Response {
 		Joins("LEFT JOIN tracks ON tracks.album_id=albums.id").
 		Group("albums.id").
 		Where("albums.tag_artist_id IS NOT NULL").
-		Offset(params.GetIntOr("offset", 0)).
-		Limit(params.GetIntOr("size", 10)).
+		Offset(parameters.GetIntOr("offset", 0)).
+		Limit(parameters.GetIntOr("size", 10)).
 		Preload("Parent").
 		Find(&folders)
 	sub := spec.NewResponse()
@@ -184,8 +184,8 @@ func (c *Controller) ServeGetAlbumList(r *http.Request) *spec.Response {
 }
 
 func (c *Controller) ServeSearchTwo(r *http.Request) *spec.Response {
-	params := r.Context().Value(CtxParams).(params.Params)
-	query := params.Get("query")
+	parameters := r.Context().Value(CtxParams).(params.Params)
+	query := parameters.Get("query")
 	if query == "" {
 		return spec.NewError(10, "please provide a `query` parameter")
 	}
@@ -199,8 +199,8 @@ func (c *Controller) ServeSearchTwo(r *http.Request) *spec.Response {
 			AND (	right_path LIKE ? OR
 					right_path_u_dec LIKE ?	)`,
 			query, query).
-		Offset(params.GetIntOr("artistOffset", 0)).
-		Limit(params.GetIntOr("artistCount", 20)).
+		Offset(parameters.GetIntOr("artistOffset", 0)).
+		Limit(parameters.GetIntOr("artistCount", 20)).
 		Find(&artists)
 	for _, a := range artists {
 		results.Artists = append(results.Artists,
@@ -214,8 +214,8 @@ func (c *Controller) ServeSearchTwo(r *http.Request) *spec.Response {
 			AND (	right_path LIKE ? OR
 					right_path_u_dec LIKE ?	)`,
 			query, query).
-		Offset(params.GetIntOr("albumOffset", 0)).
-		Limit(params.GetIntOr("albumCount", 20)).
+		Offset(parameters.GetIntOr("albumOffset", 0)).
+		Limit(parameters.GetIntOr("albumCount", 20)).
 		Find(&albums)
 	for _, a := range albums {
 		results.Albums = append(results.Albums, spec.NewTCAlbumByFolder(a))
@@ -226,8 +226,8 @@ func (c *Controller) ServeSearchTwo(r *http.Request) *spec.Response {
 		Preload("Album").
 		Where("filename LIKE ? OR filename_u_dec LIKE ?",
 			query, query).
-		Offset(params.GetIntOr("songOffset", 0)).
-		Limit(params.GetIntOr("songCount", 20)).
+		Offset(parameters.GetIntOr("songOffset", 0)).
+		Limit(parameters.GetIntOr("songCount", 20)).
 		Find(&tracks)
 	for _, t := range tracks {
 		results.Tracks = append(results.Tracks,
