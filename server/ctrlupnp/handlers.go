@@ -209,11 +209,11 @@ func (c *Controller) ServeStream(w http.ResponseWriter, r *http.Request) *Respon
 	if r.Method == "HEAD" {
 		log.Printf("Serving HEAD for %s", track.Filename)
 
-		w.WriteHeader(200)
-		w.Header().Set("Content-Length", string(track.Size))
+		w.Header().Set("Content-Length", strconv.Itoa(track.Size))
 		w.Header().Set("Content-Type", track.MIME())
-		w.Header().Set("COntentFEatures.DLNA.ORG", "DNLNA.ORG_OP=00")
+		w.Header().Set("ContentFeatures.DLNA.ORG", "DNLNA.ORG_OP=01")
 		w.Header().Set("TransferMode.DLNA.ORG", "Streaming")
+		w.WriteHeader(200)
 		return nil
 	} else {
 		log.Printf("serving raw %q\n", track.Filename)
