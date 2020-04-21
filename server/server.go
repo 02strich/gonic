@@ -69,8 +69,8 @@ func New(opts Options) *Server {
 		Addr:         opts.ListenAddr,
 		Handler:      r,
 		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 80 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		WriteTimeout: 15 * time.Minute,
+		IdleTimeout:  1 * time.Minute,
 	}
 	return &Server{
 		Server:       server,
