@@ -76,7 +76,16 @@ func (c *Controller) ServeCDSControl(r *http.Request) *Response {
 		log.Printf("Request body: %s\n", body)
 
 		objectIDStr := regexp.MustCompile("<ObjectID>(.+)</ObjectID>").FindStringSubmatch(string(body))[1]
+		startingIndex, err := strconv.Atoi(regexp.MustCompile("<StartingIndex>(.+)</StartingIndex>").FindStringSubmatch(string(body))[1])
+		if err != nil {
+			return &Response{code: http.StatusBadRequest, err: fmt.Sprint(err)}
+		}
+		requestedCount, err := strconv.Atoi(regexp.MustCompile("<RequestedCount>(.+)</RequestedCount>").FindStringSubmatch(string(body))[1])
+		if err != nil {
+			return &Response{code: http.StatusBadRequest, err: fmt.Sprint(err)}
+		}
 		numItems := 0
+		totalItems := 0
 		itemsResponse := ""
 		if objectIDStr == "0" {
 			// identify our root folders
@@ -84,7 +93,14 @@ func (c *Controller) ServeCDSControl(r *http.Request) *Response {
 			c.DB.
 				Select("*").
 				Where("parent_id is NULL").
+				Order("right_path").
+				Limit(requestedCount).
+				Offset(startingIndex).
 				Find(&dbFolders)
+			c.DB.
+				Model(&db.Album{}).
+				Where("parent_id is NULL").
+				Count(&totalItems)
 
 			// render result
 			for _, dbFolder := range dbFolders {
@@ -120,7 +136,14 @@ func (c *Controller) ServeCDSControl(r *http.Request) *Response {
 			var childFolders []*db.Album
 			c.DB.
 				Where("parent_id=?", objectIDStr).
+				Order("right_path").
+				Limit(requestedCount).
+				Offset(startingIndex).
 				Find(&childFolders)
+			c.DB.
+				Model(&db.Album{}).
+				Where("parent_id=?", objectIDStr).
+				Count(&totalItems)
 			for _, c := range childFolders {
 				itemsResponse = fmt.Sprintf(`%s<container id="%d" parentID="%s" restricted="1">
 					<dc:title>%s</dc:title>
@@ -142,6 +165,7 @@ func (c *Controller) ServeCDSControl(r *http.Request) *Response {
 					<res protocolInfo="http-get:*:%s:DLNA.ORG_PS=1;DLNA_ORG_OP=00">http://%s/upnp/streaming?id=%d</res>
 				</item>`, itemsResponse, child.ID, objectIDStr, child.Filename, child.MIME(), c.localEndpoint, child.ID)
 				numItems = numItems + 1
+				totalItems = totalItems + 1
 			}
 		}
 
@@ -163,7 +187,7 @@ func (c *Controller) ServeCDSControl(r *http.Request) *Response {
 					<UpdateID>1</UpdateID>
 				</u:BrowseResponse>
 			</s:Body>
-		</s:Envelope>`, result, numItems, numItems)
+		</s:Envelope>`, result, numItems, totalItems)
 		return &Response{code: http.StatusOK, responseData: []byte(response)}
 	case "getsortcapabilities":
 		// <?xml version="1.0" encoding="utf-8"?>
